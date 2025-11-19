@@ -1,0 +1,188 @@
+{% extends 'layout.html'%}
+
+{%block content%}
+
+<br>
+<div class="row g-3">
+    <div class="col-xl-6">
+        <h1>Store ESTS Cookies</h1>
+        <form id="store_ests_cookie_form" class="row g-3">
+            <div class="col-12">
+                <label for="store_estsauthpersistent_input" class="form-label"><b>ESTSAUTHPERSISTENT Cookie</b></label>
+                <textarea id="store_estsauthpersistent_input" class="form-control" rows="3" placeholder="0.AS..."></textarea>
+                <div class="form-text">Provide this cookie or the ESTSAUTH cookie below (at least one is required).</div>
+            </div>
+            <div class="col-12">
+                <label for="store_estsauth_input" class="form-label"><b>ESTSAUTH Cookie</b></label>
+                <textarea id="store_estsauth_input" class="form-control" rows="3" placeholder="Can be used alone if ESTSAUTHPERSISTENT is unavailable (or if the user has not selected 'Stay signed-in')."></textarea>
+            </div>
+            <div class="col-md-6">
+                <label for="store_cookie_user_input" class="form-label">Username</label>
+                <input type="text" id="store_cookie_user_input" class="form-control" placeholder="user@example.com">
+            </div>
+            <div class="col-md-6">
+                <label for="store_cookie_tenant_input" class="form-label">Tenant ID/Domain</label>
+                <input type="text" id="store_cookie_tenant_input" class="form-control" placeholder="contoso.com / Tenant ID">
+            </div>
+            <div class="col-12">
+                <label for="store_cookie_description_input" class="form-label">Description</label>
+                <input type="text" id="store_cookie_description_input" class="form-control" placeholder="Cookies dumped from workstation">
+            </div>
+            <div class="col-12">
+                <button type="button" class="btn btn-primary" onclick="addEstsCookie($('#store_estsauthpersistent_input').val(), $('#store_estsauth_input').val(), $('#store_cookie_description_input').val(), $('#store_cookie_user_input').val(), $('#store_cookie_tenant_input').val());">Store Cookies</button>
+            </div>
+        </form>
+    </div>
+    <div class="col-xl-6">
+        <h1>Cookie to Access Token</h1>
+        <form id="stored_cookie_to_access_token_form" class="row g-3">
+            <div class="col-md-4">
+                <label for="stored_cookie_id_input" class="form-label"><b>Cookie Entry ID *</b></label>
+                <input type="text" id="stored_cookie_id_input" class="form-control" placeholder="1">
+            </div>
+            <div class="col-md-4">
+                <label for="stored_client_id_input" class="form-label">Client ID</label>
+                <input list="client_id_list" id="stored_client_id_input" class="form-control" placeholder="1b730954-1685-4b74-9bfd-dac224a7b894">
+                <div class="form-text">Pick a public client that supports the native-client redirect.</div>
+                <datalist id="client_id_list">
+                    <option value="1b730954-1685-4b74-9bfd-dac224a7b894">Azure Active Directory PowerShell (default)</option>
+                    <option value="04b07795-8ddb-461a-bbee-02f9e1bf7b46">Microsoft Azure CLI</option>
+                    <option value="1950a258-227b-4e31-a9cf-717495945fc2">Microsoft Azure PowerShell</option>
+                    <option value="ea0616ba-638b-4df5-95b9-636659ae5121">Microsoft Teams (Public Client)</option>
+                    <option value="aebc6443-996d-45c2-90f0-388ff96faa56">Visual Studio Code</option>
+                </datalist>
+            </div>
+            <div class="col-md-4">
+                <label for="stored_resource_input" class="form-label">Resource</label>
+                <input list="ests_resource_list" id="stored_resource_input" class="form-control" placeholder="https://graph.microsoft.com">
+            </div>
+            <div class="col-md-4">
+                <label for="stored_description_input" class="form-label">Description</label>
+                <input type="text" id="stored_description_input" class="form-control" placeholder="Optional description">
+            </div>
+            <div class="col-md-4">
+                <label for="stored_user_hint_input" class="form-label">User Hint</label>
+                <input type="text" id="stored_user_hint_input" class="form-control" placeholder="user@example.com">
+            </div>
+            <div class="col-md-6 pt-3">
+                <input type="checkbox" id="stored_activate_access_token" class="form-check-input" checked>
+                <label for="stored_activate_access_token" class="form-check-label">Activate access token</label>
+            </div>
+            <div class="col-md-6 pt-3">
+                <input type="checkbox" id="stored_store_refresh_token" class="form-check-input" checked>
+                <label for="stored_store_refresh_token" class="form-check-label">Store refresh token</label>
+            </div>
+            <div class="col-12">
+                <button type="button" class="btn btn-primary" onclick="estsStoredCookiesToAccessToken($('#stored_cookie_id_input').val(), $('#stored_client_id_input').val(), $('#stored_resource_input').val(), $('#stored_description_input').val(), $('#stored_user_hint_input').val(), $('#stored_store_refresh_token').prop('checked'), $('#stored_activate_access_token').prop('checked'));">Request Token</button>
+            </div>
+        </form>
+    </div>
+</div>
+<datalist id="ests_resource_list">
+    <option value="https://graph.microsoft.com">MSGraph</option>
+    <option value="https://graph.windows.net/">AAD Graph</option>
+    <option value="https://outlook.office365.com">Outlook</option>
+    <option value="https://api.spaces.skype.com/">MSTeams</option>
+    <option value="https://management.core.windows.net/">AzureCoreManagement</option>
+    <option value="https://management.azure.com">AzureManagement</option>
+    <option value="urn:ms-drs:enterpriseregistration.windows.net">Register Device</option>
+</datalist>
+<div class="row g-3 mt-4">
+    <div class="col-12">
+        <table id="ests_cookies" class="table table-striped" style="table-layout:fixed; width:100%">
+            <thead>
+                <tr>
+                    <th></th>
+                    <th></th>
+                    <th>ID</th>
+                    <th>Stored At</th>
+                    <th>User</th>
+                    <th>Tenant</th>
+                    <th>Description</th>
+                </tr>
+            </thead>
+        </table>
+    </div>
+</div>
+<script type="text/javascript" class="init">
+    let estsCookieTable = new DataTable('#ests_cookies', {
+        ajax: {
+            url: '/api/list_ests_cookies', dataSrc: ""
+        },
+        columns: [
+            {
+                className: 'dt-control',
+                orderable: false,
+                data: null,
+                defaultContent: '',
+                'width': '20px'
+            },
+            {
+                className: 'use-cookie-control',
+                orderable: false,
+                data: null,
+                defaultContent: '<i class="fi fi-br-check" style="cursor: pointer"></i>',
+                'width': '40px'
+            },
+            {
+                className: 'delete-cookie-control',
+                orderable: false,
+                data: null,
+                defaultContent: '<i class="fi fi-rr-trash" style="cursor: pointer"></i>',
+                'width': '40px'
+            },
+            { data: 'id', 'width': '60px' },
+            { data: 'stored_at', 'width': '170px' },
+            { data: 'user', 'width': '300px' },
+            { data: 'tenant_id', 'width': '300px' },
+            { data: 'description' }
+        ],
+        order: [[3, 'desc']]
+    });
+
+    estsCookieTable.on('click', 'td.use-cookie-control', function (e) {
+        let tr = e.target.closest('tr');
+        let row = estsCookieTable.row(tr);
+        $("#stored_cookie_id_input").val(row.data().id);
+    });
+
+    estsCookieTable.on('click', 'td.delete-cookie-control', function (e) {
+        let tr = e.target.closest('tr');
+        let row = estsCookieTable.row(tr);
+        if (!confirm("Are you sure you want to delete ESTS cookie entry with ID " + row.data().id + "?")) { return }
+        deleteEstsCookie(row.data().id);
+    });
+
+    estsCookieTable.on('click', 'td.dt-control', function (e) {
+        let tr = e.target.closest('tr');
+        let row = estsCookieTable.row(tr);
+        if (row.child.isShown()) {
+            row.child.hide();
+        } else {
+            row.child(formatEstsCookie(row.data())).show();
+        }
+    });
+
+    function formatEstsCookie(rowData) {
+        let estsauthpersistent = rowData.estsauthpersistent ? rowData.estsauthpersistent : "(not provided)";
+        let estsauth = rowData.estsauth ? rowData.estsauth : "(not provided)";
+        return `
+            <dl class="mb-0">
+                <dt>ESTSAUTHPERSISTENT</dt>
+                <dd><code class="text-break">${escapeHtml(estsauthpersistent)}</code></dd>
+                <dt>ESTSAUTH</dt>
+                <dd><code class="text-break">${escapeHtml(estsauth)}</code></dd>
+            </dl>
+        `;
+    }
+
+    function escapeHtml(text) {
+        if (!text) { return ""; }
+        return text.replace(/&/g, "&amp;")
+                   .replace(/</g, "&lt;")
+                   .replace(/>/g, "&gt;")
+                   .replace(/"/g, "&quot;")
+                   .replace(/'/g, "&#039;");
+    }
+</script>
+{%endblock content%}
