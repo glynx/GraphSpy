@@ -61,6 +61,7 @@
                         <option value="https://api.spaces.skype.com/">MSTeams</option>
                         <option value="https://management.core.windows.net/">AzureCoreManagement</option>
                         <option value="https://management.azure.com">AzureManagement</option>
+                        <option value="urn:ms-drs:enterpriseregistration.windows.net">Register Device</option>
                     </datalist>
                 </div>
                 <div id="scope_container" class="col-12" style="display: none;">
@@ -88,6 +89,7 @@
                         <option value="00b41c95-dab0-4487-9791-b9d2c32c80f2">Office 365 Management</option>
                         <option value="04b07795-8ddb-461a-bbee-02f9e1bf7b46">Microsoft Azure CLI</option>
                         <option value="1950a258-227b-4e31-a9cf-717495945fc2">Microsoft Azure PowerShell</option>
+                        <option value="aebc6443-996d-45c2-90f0-388ff96faa56">Visual Studio Code</option>
                     </datalist>
                 </div>
                 <div class="col-6">
@@ -125,8 +127,7 @@
         }
     });
 </script>
-<div>
-    <br>
+<div class="mt-4">
     <h1>Access Tokens</h1>
     <table id="access_tokens" class="table" style="table-layout:fixed; width:100%">
         <thead>
@@ -139,6 +140,7 @@
                 <th>Issued</th>
                 <th>Expires</th>
                 <th>User</th>
+                <th>App Display Name</th>
                 <th>Resource</th>
                 <th>Description</th>
             </tr>
@@ -147,7 +149,7 @@
 </div>
 <script type="text/javascript" class="init">
     // Populate the access_tokens table
-    let myTable = new DataTable('#access_tokens', {
+    let accessTokensTable = new DataTable('#access_tokens', {
         ajax: {
             url: '/api/list_access_tokens', dataSrc: ""
         },
@@ -184,6 +186,7 @@
             { data: 'issued_at', 'width': '170px' },
             { data: 'expires_at', 'width': '170px' },
             { data: 'user', 'width': '370px' },
+            { data: 'app_display_name', 'width': '300px' },
             { data: 'resource', 'width': '370px' },
             { data: 'description' }
         ],
@@ -197,9 +200,9 @@
         }
     })
 
-    myTable.on('click', 'td.dt-control', function (e) {
+    accessTokensTable.on('click', 'td.dt-control', function (e) {
         let tr = e.target.closest('tr');
-        let row = myTable.row(tr);
+        let row = accessTokensTable.row(tr);
 
         if (row.child.isShown()) {
             // This row is already open - close it
@@ -212,22 +215,22 @@
         }
     });
 
-    myTable.on('click', 'td.active-control', function (e) {
+    accessTokensTable.on('click', 'td.active-control', function (e) {
         let tr = e.target.closest('tr');
-        let row = myTable.row(tr);
+        let row = accessTokensTable.row(tr);
         setActiveAccessToken(row.data().id);
     });
 
-    myTable.on('click', 'td.copy-control', function (e) {
+    accessTokensTable.on('click', 'td.copy-control', function (e) {
         let tr = e.target.closest('tr');
-        let row = myTable.row(tr);
+        let row = accessTokensTable.row(tr);
         copyToClipboard(row.data().accesstoken);
     });
 
 
-    myTable.on('click', 'td.delete-control', function (e) {
+    accessTokensTable.on('click', 'td.delete-control', function (e) {
         let tr = e.target.closest('tr');
-        let row = myTable.row(tr);
+        let row = accessTokensTable.row(tr);
         if (!confirm("Are you sure you want to delete access token with ID " + row.data().id + "?")) { return }
         deleteAccessToken(row.data().id);
         $('#access_tokens').DataTable().ajax.reload(null, false);

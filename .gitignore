@@ -3,5 +3,8 @@ __pycache__/
 dist/
 .vscode/
 .cursor/
+.venv
+*.egg-info
 location.txt
 *.code-workspace
+Graphspy/firstparty_redirects.json

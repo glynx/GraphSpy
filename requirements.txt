@@ -3,3 +3,4 @@ PyJWT
 Requests
 pyotp
 fido2
+playwright

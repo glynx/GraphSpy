@@ -25,6 +25,18 @@
 	- [Execution](#execution)
 	- [Usage](#usage)
 - [Features](#features)
+	- [Access and Refresh Tokens](#access-and-refresh-tokens)
+	- [ESTS Cookie Authentication](#ests-cookie-authentication)
+	- [Device Codes](#device-codes)
+	- [MFA Methods](#mfa-methods)
+	- [Files and SharePoint](#files-and-sharepoint)
+	- [Outlook](#outlook)
+	- [MS Teams](#ms-teams)
+	- [Graph Searching](#graph-searching)
+	- [Custom Requests](#custom-requests)
+	- [Entra ID](#entra-id)
+	- [Multiple Databases](#multiple-databases)
+	- [Dark Mode](#dark-mode)
 - [Release Notes](#release-notes)
 - [Upcoming Features](#upcoming-features)
 - [Sponsors](#sponsors)
@@ -47,6 +59,8 @@ pipx ensurepath
 
 # Install the latest version of GraphSpy from pypi
 pipx install graphspy
+# Install the browser binaries required for ESTS cookie authentication
+python -m playwright install chromium
 ```
 
 ## Execution
@@ -91,6 +105,12 @@ Store your access and refresh tokens for multiple users and scopes in one locati
 Easily switch between them or request new access tokens from any page.
 
 ![Token Side Bar](images/token_side_bar_1.png)
+
+## ESTS Cookie Authentication
+
+If you already have SSO cookies (for example from previous phishing) head to the **ESTS Cookies** tab and paste the `ESTSAUTHPERSISTENT` or `ESTSAUTH` (or both). GraphSpy replays that session with a headless browser, mirroring ROADtools native redirect handling, and silently redeems the cookies into fresh access tokens. 
+
+Everything runs headless by default, but you can pass `--show-browser` to watch the automation step-by-step while troubleshooting.
 
 ## Device Codes
 
@@ -193,7 +213,7 @@ Refer to the [Release Notes](https://github.com/RedByte1337/GraphSpy/wiki/Releas
 
 * Rename files and create folders
 * More authentication options
-	* Password, ESTSAuth Cookie, PRT, ...
+	* Password, PRT, ...
 * Automatic Access Token Refreshing
 * Improve Microsoft Teams Module
   * Download authenticated files
@@ -225,5 +245,6 @@ However, a lot of previous research was done by countless other persons (specifi
 	* [Introducing a new phishing technique for compromising Office 365 accounts](https://aadinternals.com/post/phishing/)
 	* [The Art of the Device Code Phish](https://0xboku.com/2021/07/12/ArtOfDeviceCodePhish.html)
 	* [GraphRunner](https://github.com/dafthack/GraphRunner) is a PowerShell tool with a lot of similar features, which was released while GraphSpy was already in development. Regardless, both tools still have their distinguishing factors.
+	* [ROADtools / roadtx](https://github.com/dirkjanm/ROADtools) for the interactive auth research that inspired GraphSpy’s ESTS cookie flow
 * Assets
 	* UIcons by [Flaticon](https://www.flaticon.com/uicons)

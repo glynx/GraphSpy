@@ -11,9 +11,13 @@ from threading import Thread
 import json, base64, uuid, urllib.parse
 import re
 import pyotp
+from .ests_cookie_auth import ests_cookies_to_tokens
 
 with open(os.path.join(os.path.dirname(os.path.abspath(__file__)),"version.txt")) as f:
     __version__ = f.read()
+
+# Microsoft Office public client is the default client across GraphSpy.
+DEFAULT_CLIENT_ID = "d3590ed6-52b3-4102-aeff-aad2292ab01c"
 
 # ========== Database ==========
 
@@ -25,10 +29,11 @@ def init_db():
     con.execute('CREATE TABLE request_templates (id INTEGER PRIMARY KEY AUTOINCREMENT, template_name TEXT, uri TEXT, method TEXT, request_type TEXT, body TEXT, headers TEXT, variables TEXT)')
     con.execute('CREATE TABLE teams_settings (access_token_id INTEGER PRIMARY KEY, skypeToken TEXT, skype_id TEXT, issued_at INTEGER, expires_at INTEGER, teams_settings_raw TEXT)')
     con.execute('CREATE TABLE mfa_otp (id INTEGER PRIMARY KEY AUTOINCREMENT, stored_at TEXT, secret_key TEXT, account_name INTEGER, description TEXT)')
+    con.execute('CREATE TABLE ests_cookies (id INTEGER PRIMARY KEY AUTOINCREMENT, stored_at TEXT, description TEXT, user TEXT, tenant_id TEXT, estsauthpersistent TEXT, estsauth TEXT)')
     con.execute('CREATE TABLE settings (setting TEXT UNIQUE, value TEXT)')
     # Valid Settings: active_access_token_id, active_refresh_token_id, schema_version, user_agent
     cur = con.cursor()
-    cur.execute("INSERT INTO settings (setting, value) VALUES ('schema_version', '4')")
+    cur.execute("INSERT INTO settings (setting, value) VALUES ('schema_version', '5')")
     con.commit()
     con.close()
 
@@ -76,7 +81,7 @@ def list_databases():
     return databases
 
 def update_db():
-    latest_schema_version = "4"
+    latest_schema_version = "5"
     current_schema_version = query_db("SELECT value FROM settings where setting = 'schema_version'",one=True)[0]
     if current_schema_version == "1":
         print("[*] Current database is schema version 1, updating to schema version 2")
@@ -95,6 +100,12 @@ def update_db():
         execute_db('CREATE TABLE mfa_otp (id INTEGER PRIMARY KEY AUTOINCREMENT, stored_at TEXT, secret_key TEXT, account_name INTEGER, description TEXT)')
         execute_db("UPDATE settings SET value = '4' WHERE setting = 'schema_version'")
         print("[*] Updated database to schema version 4")
+        current_schema_version = query_db("SELECT value FROM settings where setting = 'schema_version'",one=True)[0]
+    if current_schema_version == "4":
+        print("[*] Current database is schema version 4, updating to schema version 5")
+        execute_db('CREATE TABLE ests_cookies (id INTEGER PRIMARY KEY AUTOINCREMENT, stored_at TEXT, description TEXT, user TEXT, tenant_id TEXT, estsauthpersistent TEXT, estsauth TEXT)')
+        execute_db("UPDATE settings SET value = '5' WHERE setting = 'schema_version'")
+        print("[*] Updated database to schema version 5")
         current_schema_version = query_db("SELECT value FROM settings where setting = 'schema_version'",one=True)[0]
 
 # ========== Helper Functions ==========
@@ -243,6 +254,23 @@ def save_refresh_token(refreshtoken, description, user, tenant, resource, foci):
             )
     )
 
+def save_ests_cookie(estsauthpersistent, estsauth, description="", user="", tenant_id=""):
+    con = get_db()
+    cur = con.cursor()
+    cur.execute(
+        "INSERT INTO ests_cookies (stored_at, description, user, tenant_id, estsauthpersistent, estsauth) VALUES (?,?,?,?,?,?)",
+        (
+            f"{datetime.now()}".split(".")[0],
+            description,
+            user,
+            tenant_id,
+            estsauthpersistent,
+            estsauth
+        )
+    )
+    con.commit()
+    return cur.lastrowid
+
 def is_valid_uuid(val):
     try:
         uuid.UUID(str(val))
@@ -257,7 +285,7 @@ def get_tenant_id(tenant_domain):
     tenant_id = resp_json["authorization_endpoint"].split("/")[3]
     return tenant_id
 
-def refresh_to_access_token(refresh_token_id, client_id = "d3590ed6-52b3-4102-aeff-aad2292ab01c", resource = "defined_in_token", scope = "", store_refresh_token = True, api_version = 1):
+def refresh_to_access_token(refresh_token_id, client_id = DEFAULT_CLIENT_ID, resource = "defined_in_token", scope = "", store_refresh_token = True, api_version = 1):
     refresh_token = query_db("SELECT refreshtoken FROM refreshtokens where id = ?",[refresh_token_id],one=True)[0]
     tenant_id = query_db("SELECT tenant_id FROM refreshtokens where id = ?",[refresh_token_id],one=True)[0]
     resource = query_db("SELECT resource FROM refreshtokens where id = ?",[refresh_token_id],one=True)[0] if resource == "defined_in_token" else resource
@@ -303,7 +331,7 @@ def refresh_to_access_token(refresh_token_id, client_id = "d3590ed6-52b3-4102-ae
 
 # ========== Device Code Functions ==========
 
-def generate_device_code(resource = "https://graph.microsoft.com", client_id = "d3590ed6-52b3-4102-aeff-aad2292ab01c", ngcmfa = False):
+def generate_device_code(resource = "https://graph.microsoft.com", client_id = DEFAULT_CLIENT_ID, ngcmfa = False):
     body =  {
         "resource": resource,
         "client_id": client_id
@@ -384,7 +412,7 @@ def start_device_code_thread():
     app.config["device_code_thread"].start()
     return "[Success] Started device code polling thread."
 
-def device_code_flow(resource = "https://graph.microsoft.com", client_id = "d3590ed6-52b3-4102-aeff-aad2292ab01c", ngcmfa = False):
+def device_code_flow(resource = "https://graph.microsoft.com", client_id = DEFAULT_CLIENT_ID, ngcmfa = False):
     device_code = generate_device_code(resource, client_id, ngcmfa)
     row = query_db_json("SELECT * FROM devicecodes WHERE device_code = ?",[device_code],one=True)
     user_code = row["user_code"]
@@ -943,6 +971,10 @@ def init_routes():
     def access_tokens():
         return render_template('access_tokens.html', title="Access Tokens")
 
+    @app.route("/ests_cookies")
+    def ests_cookies():
+        return render_template('ests_cookies.html', title="ESTS Cookies")
+
     @app.route("/refresh_tokens")
     def refresh_tokens():
         return render_template('refresh_tokens.html', title="Refresh Tokens")
@@ -1023,7 +1055,7 @@ def init_routes():
     @app.post('/api/generate_device_code')
     def api_generate_device_code():
         resource = request.form['resource'] if "resource" in request.form and request.form['resource'] else "https://graph.microsoft.com"
-        client_id = request.form['client_id'] if "client_id" in request.form and request.form['client_id'] else "d3590ed6-52b3-4102-aeff-aad2292ab01c"
+        client_id = request.form['client_id'] if "client_id" in request.form and request.form['client_id'] else DEFAULT_CLIENT_ID
         ngcmfa = request.form['ngcmfa'] == "true" if "ngcmfa" in request.form else False
         if resource and client_id:
             user_code = device_code_flow(resource, client_id, ngcmfa)
@@ -1276,7 +1308,7 @@ def init_routes():
     def api_refresh_to_access_token():
         refresh_token_id = request.form['refresh_token_id'] if "refresh_token_id" in request.form else ""
         client_id = request.form['client_id'] if "client_id" in request.form else ""
-        client_id = client_id if client_id else "d3590ed6-52b3-4102-aeff-aad2292ab01c"
+        client_id = client_id if client_id else DEFAULT_CLIENT_ID
         resource = request.form['resource'] if "resource" in request.form else ""
         resource = resource if resource else "defined_in_token"
         scope = request.form['scope'] if "scope" in request.form else ""
@@ -1292,6 +1324,64 @@ def init_routes():
         except Exception as e:
             traceback.print_exc()
             return f"[Error] Unexpected error occurred. Check your input for any issues. Exception: {repr(e)}", 400
+
+    @app.post('/api/ests_cookies_to_token')
+    def api_ests_cookies_to_token():
+        cookie_id = request.form['cookie_id'] if "cookie_id" in request.form and request.form['cookie_id'] else ""
+        estsauthpersistent = ""
+        estsauth = ""
+        cookie_user = None
+        cookie_tenant = None
+        user_hint = request.form['user_hint'] if "user_hint" in request.form and request.form['user_hint'] else ""
+        if cookie_id:
+            cookie_entry = query_db_json("SELECT * FROM ests_cookies WHERE id = ?",[cookie_id],one=True)
+            if not cookie_entry:
+                gspy_log.error(f"ESTS cookie to token request failed: invalid cookie entry ID '{cookie_id}' provided.")
+                return f"[Error] Invalid ESTS cookie entry specified.", 400
+            estsauthpersistent = cookie_entry["estsauthpersistent"]
+            estsauth = cookie_entry["estsauth"]
+            cookie_user = cookie_entry["user"] if cookie_entry["user"] else None
+            cookie_tenant = cookie_entry["tenant_id"] if cookie_entry["tenant_id"] else None
+        else:
+            estsauthpersistent = request.form['estsauthpersistent'] if "estsauthpersistent" in request.form and request.form['estsauthpersistent'] else ""
+            estsauth = request.form['estsauth'] if "estsauth" in request.form and request.form['estsauth'] else ""
+            if not estsauthpersistent and not estsauth:
+                gspy_log.error("ESTS cookie to token request failed: no ESTSAUTHPERSISTENT or ESTSAUTH cookie provided.")
+                return f"[Error] Provide at least an ESTSAUTHPERSISTENT or ESTSAUTH cookie.", 400
+        client_id = request.form['client_id'] if "client_id" in request.form and request.form['client_id'] else DEFAULT_CLIENT_ID
+        resource = request.form['resource'] if "resource" in request.form and request.form['resource'] else "https://graph.microsoft.com"
+        description = request.form['description'] if "description" in request.form else ""
+        store_refresh_token = True if "store_refresh_token" in request.form else False
+        try:
+            tokens_response = ests_cookies_to_tokens(estsauthpersistent, estsauth, client_id, resource, description, store_refresh_token, cookie_user, cookie_tenant, user_hint)
+        except ValueError as e:
+            gspy_log.error(f"ESTS cookie to token request failed for client '{client_id}' and resource '{resource}': {e}")
+            return f"[Error] {e}", 400
+        return tokens_response
+
+        # ========== ESTS Cookies ==========
+
+    @app.route("/api/list_ests_cookies")
+    def api_list_ests_cookies():
+        rows = query_db_json("SELECT id, stored_at, description, user, tenant_id, estsauthpersistent, estsauth FROM ests_cookies")
+        return json.dumps(rows)
+
+    @app.post("/api/add_ests_cookie")
+    def api_add_ests_cookie():
+        estsauthpersistent = request.form['estsauthpersistent'] if "estsauthpersistent" in request.form and request.form['estsauthpersistent'] else ""
+        estsauth = request.form['estsauth'] if "estsauth" in request.form and request.form['estsauth'] else ""
+        if not estsauthpersistent and not estsauth:
+            return f"[Error] Provide at least an ESTSAUTHPERSISTENT or ESTSAUTH cookie.", 400
+        description = request.form['description'] if "description" in request.form else ""
+        cookie_user = request.form['user'] if "user" in request.form else ""
+        tenant_id = request.form['tenant_id'] if "tenant_id" in request.form else ""
+        cookie_id = save_ests_cookie(estsauthpersistent, estsauth, description, cookie_user, tenant_id)
+        return f"[Success] Stored ESTS cookies as entry ID {cookie_id}.", 200
+
+    @app.route("/api/delete_ests_cookie/<id>")
+    def api_delete_ests_cookie(id):
+        execute_db("DELETE FROM ests_cookies WHERE id = ?",[id])
+        return "true"
 
     @app.route("/api/delete_refresh_token/<id>")
     def api_delete_refresh_token(id):
@@ -1317,7 +1407,22 @@ def init_routes():
     @app.route("/api/list_access_tokens")
     def api_list_access_tokens():
         rows = query_db_json("select * from accesstokens")
-        return json.dumps(rows)
+        enriched_rows = []
+        for row in rows:
+            app_display = "unknown"
+            try:
+                decoded_accesstoken = jwt.decode(row["accesstoken"], options={"verify_signature": False})
+                if "app_displayname" in decoded_accesstoken:
+                    app_display = decoded_accesstoken["app_displayname"]
+                elif "appid" in decoded_accesstoken:
+                    app_display = decoded_accesstoken["appid"]
+                elif "azp" in decoded_accesstoken:
+                    app_display = decoded_accesstoken["azp"]
+            except Exception:
+                pass
+            row["app_display_name"] = app_display
+            enriched_rows.append(row)
+        return json.dumps(enriched_rows)
     
     @app.post('/api/add_access_token')
     def api_add_access_token():
@@ -1944,6 +2049,7 @@ def main():
     parser.add_argument("-p", "--port", type=int, help="The port to bind to. (Default = 5000)")
     parser.add_argument("-d","--database", type=str, default="database.db", help="Database file to utilize. (Default = database.db)")
     parser.add_argument("--debug", action="store_true", help="Enable flask debug mode. Will show detailed stack traces when an error occurs.")
+    parser.add_argument("--show-browser", action="store_true", help="Show the Playwright browser window when converting ESTS cookies to tokens.")
     args = parser.parse_args()
 
     # Configure logging
@@ -1959,6 +2065,7 @@ def main():
     global app
     app = Flask(__name__)
     init_routes()
+    app.config['show_browser'] = args.show_browser
 
     # First time Use
     graph_spy_folder = os.path.normpath(os.path.expanduser("~/.gspy/"))

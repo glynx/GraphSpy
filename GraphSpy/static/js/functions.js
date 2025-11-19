@@ -100,6 +100,156 @@ function refreshToAccessToken(refresh_token_id, client_id, resource = "", scope 
     });
 };
 
+function estsCookiesToAccessToken(estsauthpersistent, estsauth, client_id, resource, description, store_refresh_token = false, activate = false) {
+    if (!estsauthpersistent && !estsauth) {
+        bootstrapToast("ESTS Cookies Authentication", "[Error] Provide at least an ESTSAUTHPERSISTENT or ESTSAUTH cookie.", "danger");
+        return;
+    }
+    var post_data = {
+        "estsauthpersistent": estsauthpersistent,
+        "client_id": client_id,
+        "resource": resource,
+        "description": description
+    };
+    if (estsauth) {
+        post_data["estsauth"] = estsauth;
+    }
+    if (store_refresh_token) {
+        post_data["store_refresh_token"] = 1;
+    }
+    $.ajax({
+        type: "POST",
+        async: false,
+        url: "/api/ests_cookies_to_token",
+        dataType: "json",
+        data: post_data,
+        success: function (response) {
+            if (!response || !response.access_token_id) {
+                bootstrapToast("ESTS Cookies Authentication", "[Error] Unexpected response from GraphSpy.", "danger");
+                return;
+            }
+            if (activate) {
+                setActiveAccessToken(response.access_token_id, true);
+            }
+            let successMessage = `[Succes] Obtained access token with ID '${response.access_token_id}'.`;
+            if (activate) {
+                successMessage += " Activated access token.";
+            }
+            if (response.refresh_token_id) {
+                successMessage += ` Stored refresh token with ID '${response.refresh_token_id}'.`;
+            } else if (store_refresh_token) {
+                successMessage += " No refresh token was returned by Microsoft.";
+            }
+            if (response.foci !== undefined) {
+                let isFoci = parseInt(response.foci) ? true : false;
+                successMessage += isFoci ? " Token is FOCI." : " Token is not FOCI.";
+            }
+            bootstrapToast("ESTS Cookies Authentication", successMessage, "success");
+            reloadTables();
+        },
+        error: function (xhr, status, error) {
+            bootstrapToast("ESTS Cookies Authentication", xhr.responseText, "danger");
+        }
+    });
+};
+
+function estsStoredCookiesToAccessToken(cookie_id, client_id, resource, description, user_hint, store_refresh_token = false, activate = false) {
+    if (!cookie_id) {
+        bootstrapToast("ESTS Cookies Authentication", "[Error] No stored cookie ID specified.", "danger");
+        return;
+    }
+    var post_data = {
+        "cookie_id": cookie_id,
+        "client_id": client_id,
+        "resource": resource,
+        "description": description
+    };
+    if (user_hint) {
+        post_data["user_hint"] = user_hint;
+    }
+    if (store_refresh_token) {
+        post_data["store_refresh_token"] = 1;
+    }
+    $.ajax({
+        type: "POST",
+        async: false,
+        url: "/api/ests_cookies_to_token",
+        dataType: "json",
+        data: post_data,
+        success: function (response) {
+            if (!response || !response.access_token_id) {
+                bootstrapToast("ESTS Cookies Authentication", "[Error] Unexpected response from GraphSpy.", "danger");
+                return;
+            }
+            if (activate) {
+                setActiveAccessToken(response.access_token_id, true);
+            }
+            let successMessage = `[Succes] Obtained access token with ID '${response.access_token_id}'.`;
+            if (activate) {
+                successMessage += " Activated access token.";
+            }
+            if (response.refresh_token_id) {
+                successMessage += ` Stored refresh token with ID '${response.refresh_token_id}'.`;
+            } else if (store_refresh_token) {
+                successMessage += " No refresh token was returned by Microsoft.";
+            }
+            if (response.foci !== undefined) {
+                let isFoci = parseInt(response.foci) ? true : false;
+                successMessage += isFoci ? " Token is FOCI." : " Token is not FOCI.";
+            }
+            bootstrapToast("ESTS Cookies Authentication", successMessage, "success");
+            reloadTables();
+        },
+        error: function (xhr, status, error) {
+            bootstrapToast("ESTS Cookies Authentication", xhr.responseText, "danger");
+        }
+    });
+};
+
+function addEstsCookie(estsauthpersistent, estsauth, description, user, tenant_id) {
+    if (!estsauthpersistent && !estsauth) {
+        bootstrapToast("Store ESTS Cookies", "[Error] Provide at least an ESTSAUTHPERSISTENT or ESTSAUTH cookie.", "danger");
+        return;
+    }
+    $.ajax({
+        type: "POST",
+        async: false,
+        url: "/api/add_ests_cookie",
+        data: {
+            "estsauthpersistent": estsauthpersistent,
+            "estsauth": estsauth,
+            "description": description,
+            "user": user,
+            "tenant_id": tenant_id
+        },
+        success: function (response) {
+            bootstrapToast("Store ESTS Cookies", response, "success");
+            if (document.getElementById("store_ests_cookie_form")) {
+                document.getElementById("store_ests_cookie_form").reset();
+            }
+            $('#ests_cookies').DataTable().ajax.reload(null, false);
+        },
+        error: function (xhr, status, error) {
+            bootstrapToast("Store ESTS Cookies", xhr.responseText, "danger");
+        }
+    });
+};
+
+function deleteEstsCookie(cookie_id) {
+    $.ajax({
+        type: "GET",
+        async: false,
+        url: "/api/delete_ests_cookie/" + cookie_id,
+        success: function () {
+            bootstrapToast("Delete ESTS Cookies", `[Success] Deleted ESTS cookie entry with ID ${cookie_id}.`, "success");
+            $('#ests_cookies').DataTable().ajax.reload(null, false);
+        },
+        error: function (xhr, status, error) {
+            bootstrapToast("Delete ESTS Cookies", xhr.responseText, "danger");
+        }
+    });
+};
+
 function deleteRefreshToken(token_id) {
     let response = $.ajax({
         type: "GET",
