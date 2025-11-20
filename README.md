@@ -27,6 +27,7 @@
 - [Features](#features)
 	- [Access and Refresh Tokens](#access-and-refresh-tokens)
 	- [ESTS Cookie Authentication](#ests-cookie-authentication)
+	- [Password Authentication](#password-authentication)
 	- [Device Codes](#device-codes)
 	- [MFA Methods](#mfa-methods)
 	- [Files and SharePoint](#files-and-sharepoint)
@@ -111,6 +112,18 @@ Easily switch between them or request new access tokens from any page.
 If you already have SSO cookies (for example from previous phishing) head to the **ESTS Cookies** tab and paste the `ESTSAUTHPERSISTENT` or `ESTSAUTH` (or both). GraphSpy replays that session with a headless browser, mirroring ROADtools native redirect handling, and silently redeems the cookies into fresh access tokens. 
 
 Everything runs headless by default, but you can pass `--show-browser` to watch the automation step-by-step while troubleshooting.
+
+## Password Authentication
+
+Capture clear-text Entra ID credentials? The **Entra Credentials** tab lets you safely store usernames, passwords, and optional tenant hints in the database. You can replay those credentials whenever needed to perform a Resource Owner Password Credentials (ROPC) grant for any public client and resource supported by Azure AD.
+
+From the same page you can:
+
+- Generate access tokens directly from stored credentials and optionally activate them immediately in GraphSpy.
+- Request refresh tokens in the same flow and store them for later use, including FOCI context.
+- Override the tenant ID/domain per request if you need to target a different directory than the one saved with the credential.
+
+Keep in mind that Microsoft blocks password-based auth when the account is protected by MFA or conditional access, so this feature shines most when accounts are legacy, have weaker policies, or you have already satisfied the additional requirements.
 
 ## Device Codes
 
@@ -213,7 +226,7 @@ Refer to the [Release Notes](https://github.com/RedByte1337/GraphSpy/wiki/Releas
 
 * Rename files and create folders
 * More authentication options
-	* Password, PRT, ...
+	* PRT, ...
 * Automatic Access Token Refreshing
 * Improve Microsoft Teams Module
   * Download authenticated files

@@ -12,6 +12,7 @@ import json, base64, uuid, urllib.parse
 import re
 import pyotp
 from .ests_cookie_auth import ests_cookies_to_tokens
+from .password_auth import save_entra_credential, entra_credentials_to_tokens
 
 with open(os.path.join(os.path.dirname(os.path.abspath(__file__)),"version.txt")) as f:
     __version__ = f.read()
@@ -30,10 +31,11 @@ def init_db():
     con.execute('CREATE TABLE teams_settings (access_token_id INTEGER PRIMARY KEY, skypeToken TEXT, skype_id TEXT, issued_at INTEGER, expires_at INTEGER, teams_settings_raw TEXT)')
     con.execute('CREATE TABLE mfa_otp (id INTEGER PRIMARY KEY AUTOINCREMENT, stored_at TEXT, secret_key TEXT, account_name INTEGER, description TEXT)')
     con.execute('CREATE TABLE ests_cookies (id INTEGER PRIMARY KEY AUTOINCREMENT, stored_at TEXT, description TEXT, user TEXT, tenant_id TEXT, estsauthpersistent TEXT, estsauth TEXT)')
+    con.execute('CREATE TABLE entra_credentials (id INTEGER PRIMARY KEY AUTOINCREMENT, stored_at TEXT, description TEXT, username TEXT, tenant_id TEXT, password TEXT)')
     con.execute('CREATE TABLE settings (setting TEXT UNIQUE, value TEXT)')
     # Valid Settings: active_access_token_id, active_refresh_token_id, schema_version, user_agent
     cur = con.cursor()
-    cur.execute("INSERT INTO settings (setting, value) VALUES ('schema_version', '5')")
+    cur.execute("INSERT INTO settings (setting, value) VALUES ('schema_version', '6')")
     con.commit()
     con.close()
 
@@ -81,7 +83,7 @@ def list_databases():
     return databases
 
 def update_db():
-    latest_schema_version = "5"
+    latest_schema_version = "6"
     current_schema_version = query_db("SELECT value FROM settings where setting = 'schema_version'",one=True)[0]
     if current_schema_version == "1":
         print("[*] Current database is schema version 1, updating to schema version 2")
@@ -106,6 +108,12 @@ def update_db():
         execute_db('CREATE TABLE ests_cookies (id INTEGER PRIMARY KEY AUTOINCREMENT, stored_at TEXT, description TEXT, user TEXT, tenant_id TEXT, estsauthpersistent TEXT, estsauth TEXT)')
         execute_db("UPDATE settings SET value = '5' WHERE setting = 'schema_version'")
         print("[*] Updated database to schema version 5")
+        current_schema_version = query_db("SELECT value FROM settings where setting = 'schema_version'",one=True)[0]
+    if current_schema_version == "5":
+        print("[*] Current database is schema version 5, updating to schema version 6")
+        execute_db('CREATE TABLE entra_credentials (id INTEGER PRIMARY KEY AUTOINCREMENT, stored_at TEXT, description TEXT, username TEXT, tenant_id TEXT, password TEXT)')
+        execute_db("UPDATE settings SET value = '6' WHERE setting = 'schema_version'")
+        print("[*] Updated database to schema version 6")
         current_schema_version = query_db("SELECT value FROM settings where setting = 'schema_version'",one=True)[0]
 
 # ========== Helper Functions ==========
@@ -227,8 +235,11 @@ def save_access_token(accesstoken, description):
             else decoded_accesstoken["app_displayname"] if "app_displayname" in decoded_accesstoken \
             else decoded_accesstoken["oid"] if "oid" in decoded_accesstoken \
             else "unknown"
-    
-    execute_db("INSERT INTO accesstokens (stored_at, issued_at, expires_at, description, user, resource, accesstoken) VALUES (?,?,?,?,?,?,?)",(
+    con = get_db()
+    cur = con.cursor()
+    cur.execute(
+        "INSERT INTO accesstokens (stored_at, issued_at, expires_at, description, user, resource, accesstoken) VALUES (?,?,?,?,?,?,?)",
+        (
             f"{datetime.now()}".split(".")[0],
             datetime.fromtimestamp(decoded_accesstoken["iat"]) if "iat" in decoded_accesstoken else "unknown",
             datetime.fromtimestamp(decoded_accesstoken["exp"]) if "exp" in decoded_accesstoken else "unknown",
@@ -236,14 +247,20 @@ def save_access_token(accesstoken, description):
             user,
             decoded_accesstoken["aud"] if "aud" in decoded_accesstoken else "unknown",
             accesstoken
-            )
+        )
     )
-    
+    con.commit()
+    return cur.lastrowid
+
 def save_refresh_token(refreshtoken, description, user, tenant, resource, foci):
     # Used to convert potential boolean inputs to an integer, as the DB uses an integer to store this value
     foci_int = 1 if foci else 0
     tenant_id = tenant.strip('"{}-[]\\/\' ') if is_valid_uuid(tenant.strip('"{}-[]\\/\' ')) else get_tenant_id(tenant)
-    execute_db("INSERT INTO refreshtokens (stored_at, description, user, tenant_id, resource, foci, refreshtoken) VALUES (?,?,?,?,?,?,?)",(
+    con = get_db()
+    cur = con.cursor()
+    cur.execute(
+        "INSERT INTO refreshtokens (stored_at, description, user, tenant_id, resource, foci, refreshtoken) VALUES (?,?,?,?,?,?,?)",
+        (
             f"{datetime.now()}".split(".")[0],
             description,
             user,
@@ -251,8 +268,10 @@ def save_refresh_token(refreshtoken, description, user, tenant, resource, foci):
             resource,
             foci_int,
             refreshtoken
-            )
+        )
     )
+    con.commit()
+    return cur.lastrowid
 
 def save_ests_cookie(estsauthpersistent, estsauth, description="", user="", tenant_id=""):
     con = get_db()
@@ -308,8 +327,7 @@ def refresh_to_access_token(refresh_token_id, client_id = DEFAULT_CLIENT_ID, res
         error_msg = f"[{response.json()['error']}] {response.json()['error_description']}"
         return error_msg
     access_token = response.json()["access_token"]
-    save_access_token(access_token, f"Created using refresh token {refresh_token_id}")
-    access_token_id = query_db("SELECT id FROM accesstokens where accesstoken = ?",[access_token],one=True)[0]
+    access_token_id = save_access_token(access_token, f"Created using refresh token {refresh_token_id}")
     if store_refresh_token:
         decoded_accesstoken = jwt.decode(access_token, options={"verify_signature": False})
         user = "unknown"
@@ -975,6 +993,10 @@ def init_routes():
     def ests_cookies():
         return render_template('ests_cookies.html', title="ESTS Cookies")
 
+    @app.route("/entra_credentials")
+    def entra_credentials():
+        return render_template('entra_credentials.html', title="Entra ID Credentials")
+
     @app.route("/refresh_tokens")
     def refresh_tokens():
         return render_template('refresh_tokens.html', title="Refresh Tokens")
@@ -1382,6 +1404,62 @@ def init_routes():
     def api_delete_ests_cookie(id):
         execute_db("DELETE FROM ests_cookies WHERE id = ?",[id])
         return "true"
+
+        # ========== Entra Credentials ==========
+
+    @app.route("/api/list_entra_credentials")
+    def api_list_entra_credentials():
+        rows = query_db_json("SELECT id, stored_at, description, username, tenant_id, password FROM entra_credentials")
+        return json.dumps(rows)
+
+    @app.post("/api/add_entra_credential")
+    def api_add_entra_credential():
+        username = request.form['username'] if "username" in request.form and request.form['username'] else ""
+        password = request.form['password'] if "password" in request.form and request.form['password'] else ""
+        if not username or not password:
+            return f"[Error] Provide both a username and password.", 400
+        description = request.form['description'] if "description" in request.form else ""
+        tenant_id = request.form['tenant_id'] if "tenant_id" in request.form else ""
+        credential_id = save_entra_credential(username, password, description, tenant_id)
+        return f"[Success] Stored credential as entry ID {credential_id}.", 200
+
+    @app.route("/api/delete_entra_credential/<id>")
+    def api_delete_entra_credential(id):
+        execute_db("DELETE FROM entra_credentials WHERE id = ?",[id])
+        return "true"
+
+    @app.post("/api/entra_credentials_to_token")
+    def api_entra_credentials_to_token():
+        credential_id = request.form['credential_id'] if "credential_id" in request.form and request.form['credential_id'] else ""
+        username = ""
+        password = ""
+        tenant_id = ""
+        tenant_override = request.form['tenant_id'] if "tenant_id" in request.form and request.form['tenant_id'] else ""
+        if credential_id:
+            credential_entry = query_db_json("SELECT * FROM entra_credentials WHERE id = ?",[credential_id],one=True)
+            if not credential_entry:
+                gspy_log.error(f"Credential to token request failed: invalid credential entry ID '{credential_id}' provided.")
+                return f"[Error] Invalid credential entry specified.", 400
+            username = credential_entry["username"]
+            password = credential_entry["password"]
+            tenant_id = tenant_override if tenant_override else credential_entry["tenant_id"] if credential_entry["tenant_id"] else "common"
+        else:
+            username = request.form['username'] if "username" in request.form and request.form['username'] else ""
+            password = request.form['password'] if "password" in request.form and request.form['password'] else ""
+            tenant_id = tenant_override if tenant_override else "common"
+            if not username or not password:
+                gspy_log.error("Credential to token request failed: no username or password provided.")
+                return f"[Error] Provide both a username and password.", 400
+        client_id = request.form['client_id'] if "client_id" in request.form and request.form['client_id'] else DEFAULT_CLIENT_ID
+        resource = request.form['resource'] if "resource" in request.form and request.form['resource'] else "https://graph.microsoft.com"
+        description = request.form['description'] if "description" in request.form else ""
+        store_refresh_token = True if "store_refresh_token" in request.form else False
+        try:
+            tokens_response = entra_credentials_to_tokens(username, password, client_id, resource, description, tenant_id, store_refresh_token)
+        except ValueError as e:
+            gspy_log.error(f"Credential to token request failed for user '{username}' and client '{client_id}': {e}")
+            return f"[Error] {e}", 400
+        return tokens_response
 
     @app.route("/api/delete_refresh_token/<id>")
     def api_delete_refresh_token(id):

@@ -250,6 +250,106 @@ function deleteEstsCookie(cookie_id) {
     });
 };
 
+function addEntraCredential(username, password, description, tenant_id) {
+    if (!username || !password) {
+        bootstrapToast("Store Entra Credentials", "[Error] Provide both a username and password.", "danger");
+        return;
+    }
+    $.ajax({
+        type: "POST",
+        async: false,
+        url: "/api/add_entra_credential",
+        data: {
+            "username": username,
+            "password": password,
+            "description": description,
+            "tenant_id": tenant_id
+        },
+        success: function (response) {
+            bootstrapToast("Store Entra Credentials", response, "success");
+            if (document.getElementById("store_entra_credentials_form")) {
+                document.getElementById("store_entra_credentials_form").reset();
+            }
+            if ($.fn.DataTable.isDataTable('#entra_credentials')) {
+                $('#entra_credentials').DataTable().ajax.reload(null, false);
+            }
+        },
+        error: function (xhr, status, error) {
+            bootstrapToast("Store Entra Credentials", xhr.responseText, "danger");
+        }
+    });
+};
+
+function deleteEntraCredential(credential_id) {
+    $.ajax({
+        type: "GET",
+        async: false,
+        url: "/api/delete_entra_credential/" + credential_id,
+        success: function () {
+            bootstrapToast("Delete Entra Credentials", `[Success] Deleted credential entry with ID ${credential_id}.`, "success");
+            if ($.fn.DataTable.isDataTable('#entra_credentials')) {
+                $('#entra_credentials').DataTable().ajax.reload(null, false);
+            }
+        },
+        error: function (xhr, status, error) {
+            bootstrapToast("Delete Entra Credentials", xhr.responseText, "danger");
+        }
+    });
+};
+
+function entraStoredCredentialsToAccessToken(credential_id, client_id, resource, description, tenant_id, store_refresh_token = false, activate = false) {
+    if (!credential_id) {
+        bootstrapToast("Credential Authentication", "[Error] No stored credential ID specified.", "danger");
+        return;
+    }
+    var post_data = {
+        "credential_id": credential_id,
+        "client_id": client_id ? client_id : "",
+        "resource": resource ? resource : "",
+        "description": description
+    };
+    if (tenant_id) {
+        post_data["tenant_id"] = tenant_id;
+    }
+    if (store_refresh_token) {
+        post_data["store_refresh_token"] = 1;
+    }
+    $.ajax({
+        type: "POST",
+        async: false,
+        url: "/api/entra_credentials_to_token",
+        dataType: "json",
+        data: post_data,
+        success: function (response) {
+            if (!response || !response.access_token_id) {
+                bootstrapToast("Credential Authentication", "[Error] Unexpected response from GraphSpy.", "danger");
+                return;
+            }
+            if (activate) {
+                setActiveAccessToken(response.access_token_id, true);
+            }
+            let successMessage = `[Succes] Obtained access token with ID '${response.access_token_id}'.`;
+            if (activate) {
+                successMessage += " Activated access token.";
+            }
+            if (response.refresh_token_id) {
+                successMessage += ` Stored refresh token with ID '${response.refresh_token_id}'.`;
+            } else if (store_refresh_token) {
+                successMessage += " No refresh token was returned by Microsoft.";
+            }
+            if (response.foci !== undefined && response.foci !== null) {
+                let isFoci = parseInt(response.foci) ? true : false;
+                successMessage += isFoci ? " Token is FOCI." : " Token is not FOCI.";
+            }
+            bootstrapToast("Credential Authentication", successMessage, "success");
+            reloadTables();
+        },
+        error: function (xhr, status, error) {
+            bootstrapToast("Credential Authentication", xhr.responseText, "danger");
+        }
+    });
+};
+
 function deleteRefreshToken(token_id) {
     let response = $.ajax({
         type: "GET",
